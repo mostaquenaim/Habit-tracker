@@ -12,12 +12,14 @@ import {
   Star,
   Sparkles,
   LogOut,
+  Wand2,
+  Lightbulb,
 } from "lucide-react";
 import * as THREE from "three";
 import { motion } from "framer-motion";
 import Image from "next/image";
 
-const QuestTracker = () => {
+const QuestTracker2 = () => {
   const [user, setUser] = useState({ name: "", id: "" });
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState({});
@@ -57,6 +59,11 @@ const QuestTracker = () => {
     requiredXP: 100,
     requiredLevel: 1,
   });
+
+  const [showAISuggestions, setShowAISuggestions] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [userPreferences, setUserPreferences] = useState("");
+  const [aiSuggestions, setAiSuggestions] = useState([]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -358,7 +365,210 @@ const QuestTracker = () => {
     });
   };
 
-  
+  // Auto-generate personalized quests based on user goals
+  const generateQuests = async (preferences) => {
+    if (!preferences.trim()) {
+      alert("Please enter your interests or goals to generate quests!");
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Generate 3-5 personalized daily quests for someone interested in: ${preferences}.
+              Return ONLY a JSON array of objects with this format:
+              [{ "name": "Quest name", "xp": number, "type": "everyday|weekday|weekend|manual", "description": "brief description" }]
+              Make the XP values appropriate (10-50 for easy, 50-100 for medium tasks).`,
+                  },
+                ],
+              },
+            ],
+          }),
+        }
+      );
+
+      const data = await response.json();
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      console.log("Raw Gemini response:", text);
+
+      // 🧹 Clean out markdown formatting like ```json ... ```
+      text = text
+        .replace(/```json/i, "") // remove starting ```json
+        .replace(/```/g, "") // remove any remaining ```
+        .trim();
+
+      let aiSuggestions;
+      try {
+        aiSuggestions = JSON.parse(text);
+        console.log("Parsed AI suggestions:", aiSuggestions);
+      } catch (err) {
+        console.error("Failed to parse Gemini response:", err);
+        aiSuggestions = getMockAISuggestions(preferences);
+      }
+
+      setAiSuggestions(aiSuggestions);
+
+      console.log(data, "geminidata");
+
+      // Simulated API response for demo
+      // await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // // Mock AI response based on user preferences
+      // const mockSuggestions = getMockAISuggestions(preferences);
+      // setAiSuggestions(mockSuggestions);
+    } catch (error) {
+      console.error("AI Quest generation error:", error);
+      // Fallback to mock data
+      const mockSuggestions = getMockAISuggestions(preferences);
+      setAiSuggestions(mockSuggestions);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Mock AI function for demo
+  const getMockAISuggestions = (preferences) => {
+    const lowerPref = preferences.toLowerCase();
+    const suggestions = [];
+
+    if (lowerPref.includes("fitness") || lowerPref.includes("exercise")) {
+      suggestions.push(
+        {
+          name: "30-minute workout",
+          xp: 25,
+          type: "everyday",
+          description: "Complete a full body workout session",
+        },
+        {
+          name: "10,000 steps",
+          xp: 20,
+          type: "everyday",
+          description: "Walk or run to reach your daily step goal",
+        },
+        {
+          name: "Morning stretch routine",
+          xp: 15,
+          type: "everyday",
+          description: "Start your day with 10 minutes of stretching",
+        }
+      );
+    }
+
+    if (lowerPref.includes("study") || lowerPref.includes("learn")) {
+      suggestions.push(
+        {
+          name: "1 hour focused study",
+          xp: 30,
+          type: "everyday",
+          description: "Dedicated learning time without distractions",
+        },
+        {
+          name: "Read 20 pages",
+          xp: 20,
+          type: "everyday",
+          description: "Expand your knowledge through reading",
+        },
+        {
+          name: "Practice skill building",
+          xp: 25,
+          type: "weekday",
+          description: "Work on developing a specific skill",
+        }
+      );
+    }
+
+    if (lowerPref.includes("meditation") || lowerPref.includes("mindfulness")) {
+      suggestions.push(
+        {
+          name: "10-minute meditation",
+          xp: 15,
+          type: "everyday",
+          description: "Practice mindfulness and breathing",
+        },
+        {
+          name: "Gratitude journaling",
+          xp: 10,
+          type: "everyday",
+          description: "Write down three things you're grateful for",
+        }
+      );
+    }
+
+    // Default suggestions if no specific matches
+    if (suggestions.length === 0) {
+      suggestions.push(
+        {
+          name: "Morning planning session",
+          xp: 15,
+          type: "everyday",
+          description: "Plan your day for maximum productivity",
+        },
+        {
+          name: "Evening reflection",
+          xp: 10,
+          type: "everyday",
+          description: "Review your day and lessons learned",
+        },
+        {
+          name: "Digital detox hour",
+          xp: 20,
+          type: "weekend",
+          description: "Spend one hour without screens",
+        }
+      );
+    }
+
+    return suggestions.slice(0, 4); // Return max 4 suggestions
+  };
+
+  const addAISuggestion = (suggestion) => {
+    const task = {
+      id: "task-" + Date.now(),
+      name: suggestion.name,
+      xp: suggestion.xp,
+      type: suggestion.type,
+      isNegative: false,
+    };
+
+    setTasks([...tasks, task]);
+    setAiSuggestions(aiSuggestions.filter((s) => s.name !== suggestion.name));
+  };
+
+  const addAllAISuggestions = () => {
+    const newTasks = aiSuggestions.map((suggestion) => ({
+      id: "task-" + Date.now() + Math.random(),
+      name: suggestion.name,
+      xp: suggestion.xp,
+      type: suggestion.type,
+      isNegative: false,
+    }));
+
+    setTasks([...tasks, ...newTasks]);
+    setAiSuggestions([]);
+    setShowAISuggestions(false);
+    setUserPreferences("");
+  };
+
+  // Provide AI-powered encouragement and insights
+  const getProgressInsights = async (userData) => {
+    const prompt = `Analyze this user's quest completion data and provide motivational insights: ${JSON.stringify(
+      userData
+    )}`;
+    // Call DeepSeek API for personalized feedback
+  };
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -377,44 +587,18 @@ const QuestTracker = () => {
 
       {/* Header */}
       {/* <div className="flex justify-between items-center mb-10"> */}
-        {/* Member Section */}
-        {member ? (
-          <div className="perspective-[1000px]">
-            <div className="transform-gpu rotate-y-[8deg] hover:rotate-y-[0deg] transition-transform duration-700 flex justify-between items-center mb-10">
-              <div className="relative group">
-                <img
-                  src={member.image}
-                  alt={member.name}
-                  className="w-24 h-24 rounded-full border-2 border-purple-400 shadow-2xl shadow-[0_0_30px_rgba(168,85,247,0.7)] transform transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-pink-500/30 to-purple-500/30 blur-xl opacity-60 group-hover:opacity-90 transition-opacity duration-500 -z-10" />
-              </div>
-              <motion.h1
-                initial={{ y: -20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent"
-              >
-                Quest Tracker
-              </motion.h1>
-              <div className="relative flex items-center gap-4 bg-slate-800/60 px-6 py-6 rounded-2xl shadow-[0_0_25px_rgba(139,92,246,0.4)] backdrop-blur-md border border-slate-700 transition-transform duration-500 hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(236,72,153,0.5)]">
-                <div className="text-center">
-                  <p className="font-semibold text-lg bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(168,85,247,0.4)]">
-                    {member.name}
-                  </p>
-                  <p className="text-xs text-slate-400">@{member.username}</p>
-                </div>
-
-                <button
-                  onClick={handleLogout}
-                  className="text-sm mt-1 text-red-400 hover:text-red-300 flex items-center gap-1 transition-transform duration-300 hover:scale-110"
-                >
-                  <LogOut className="w-4 h-4" /> Leave
-                </button>
-              </div>
+      {/* Member Section */}
+      {member ? (
+        <div className="perspective-[1000px]">
+          <div className="transform-gpu rotate-y-[8deg] hover:rotate-y-[0deg] transition-transform duration-700 flex justify-between items-center mb-10">
+            <div className="relative group">
+              <img
+                src={member.image}
+                alt={member.name}
+                className="w-24 h-24 rounded-full border-2 border-purple-400 shadow-2xl shadow-[0_0_30px_rgba(168,85,247,0.7)] transform transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-pink-500/30 to-purple-500/30 blur-xl opacity-60 group-hover:opacity-90 transition-opacity duration-500 -z-10" />
             </div>
-          </div>
-        ) : (
-          <div className="flex justify-between items-center mb-10">
             <motion.h1
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -422,16 +606,42 @@ const QuestTracker = () => {
             >
               Quest Tracker
             </motion.h1>
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setShowModal(true)}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-pink-500/30"
-            >
-              ⚔️ Join the Guild
-            </motion.button>
+            <div className="relative flex items-center gap-4 bg-slate-800/60 px-6 py-6 rounded-2xl shadow-[0_0_25px_rgba(139,92,246,0.4)] backdrop-blur-md border border-slate-700 transition-transform duration-500 hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(236,72,153,0.5)]">
+              <div className="text-center">
+                <p className="font-semibold text-lg bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(168,85,247,0.4)]">
+                  {member.name}
+                </p>
+                <p className="text-xs text-slate-400">@{member.username}</p>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="text-sm mt-1 text-red-400 hover:text-red-300 flex items-center gap-1 transition-transform duration-300 hover:scale-110"
+              >
+                <LogOut className="w-4 h-4" /> Leave
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+      ) : (
+        <div className="flex justify-between items-center mb-10">
+          <motion.h1
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent"
+          >
+            Quest Tracker
+          </motion.h1>
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowModal(true)}
+            className="bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-pink-500/30"
+          >
+            ⚔️ Join the Guild
+          </motion.button>
+        </div>
+      )}
       {/* </div> */}
 
       {/* Join Modal */}
@@ -613,14 +823,146 @@ const QuestTracker = () => {
                       <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white">
                         Daily Quests
                       </h2>
-                      <button
-                        onClick={() => setShowAddTask(true)}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-emerald-500/50 hover:shadow-emerald-500/70 hover:scale-105"
-                      >
-                        <Plus className="w-5 h-5" />
-                        Add Quest
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        {/* <button
+                          onClick={() => setShowAISuggestions(true)}
+                          className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-purple-500/50 hover:shadow-purple-500/70 hover:scale-105"
+                        >
+                          <Wand2 className="w-5 h-5" />
+                          AI Quest Suggestions
+                        </button> */}
+                        <button
+                          onClick={() => setShowAddTask(true)}
+                          className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-emerald-500/50 hover:shadow-emerald-500/70 hover:scale-105"
+                        >
+                          <Plus className="w-5 h-5" />
+                          Add Quest
+                        </button>
+                      </div>
                     </div>
+
+                    {/* AI Suggestions Modal */}
+                    {showAISuggestions && (
+                      <div className="bg-gradient-to-br from-purple-900/90 to-pink-900/90 backdrop-blur-xl rounded-2xl p-6 mb-6 border border-white/10 shadow-2xl">
+                        <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                          <Wand2 className="w-5 h-5 text-purple-300" />
+                          AI Quest Generator
+                        </h3>
+
+                        {aiSuggestions.length === 0 ? (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-3 text-purple-200 mb-4">
+                              <Lightbulb className="w-5 h-5" />
+                              <span>
+                                Tell me about your goals and I'll suggest
+                                personalized quests!
+                              </span>
+                            </div>
+                            <textarea
+                              placeholder="e.g., I want to improve my fitness, learn programming, practice mindfulness, read more books..."
+                              value={userPreferences}
+                              onChange={(e) =>
+                                setUserPreferences(e.target.value)
+                              }
+                              className="w-full px-4 py-3 rounded-xl bg-slate-700/50 text-white placeholder-white/40 border-2 border-white/10 focus:border-purple-400 focus:outline-none transition-all backdrop-blur-sm min-h-[100px]"
+                            />
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => generateQuests(userPreferences)}
+                                disabled={aiLoading}
+                                className="flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {aiLoading ? (
+                                  <>
+                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-5 h-5" />
+                                    Generate Quests
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setShowAISuggestions(false)}
+                                className="px-6 py-3 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-white font-semibold transition-all border border-white/10"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-white font-semibold text-lg">
+                                Suggested Quests ({aiSuggestions.length})
+                              </h4>
+                              <button
+                                onClick={addAllAISuggestions}
+                                className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg font-semibold transition-all text-sm"
+                              >
+                                <Plus className="w-4 h-4" />
+                                Add All
+                              </button>
+                            </div>
+
+                            <div className="grid gap-3">
+                              {aiSuggestions.map((suggestion, index) => (
+                                <div
+                                  key={index}
+                                  className="flex items-center justify-between p-4 rounded-xl bg-slate-800/50 border border-white/10 hover:bg-slate-700/50 transition-all group"
+                                >
+                                  <div className="flex-1">
+                                    <div className="text-white font-semibold">
+                                      {suggestion.name}
+                                    </div>
+                                    <div className="text-purple-300 text-sm mt-1">
+                                      {suggestion.description}
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-2 text-sm">
+                                      <span className="text-blue-300 flex items-center gap-1">
+                                        <Zap className="w-4 h-4" />+
+                                        {suggestion.xp} XP
+                                      </span>
+                                      <span className="text-green-300 capitalize">
+                                        {suggestion.type}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => addAISuggestion(suggestion)}
+                                    className="ml-4 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg font-semibold transition-all opacity-0 group-hover:opacity-100 hover:scale-105"
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
+                              <button
+                                onClick={() => generateQuests(userPreferences)}
+                                className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-2 rounded-lg font-semibold transition-all"
+                              >
+                                <Wand2 className="w-4 h-4" />
+                                Generate More
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setShowAISuggestions(false);
+                                  setAiSuggestions([]);
+                                  setUserPreferences("");
+                                }}
+                                className="px-6 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-white font-semibold transition-all border border-white/10"
+                              >
+                                Done
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {showAddTask && (
                       <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-xl rounded-2xl p-4 sm:p-6 mb-6 border border-white/10 shadow-2xl">
@@ -694,93 +1036,6 @@ const QuestTracker = () => {
                         </div>
                       </div>
                     )}
-
-                    <div className="space-y-4">
-                      {dates.map((date) => {
-                        const dateTasks = getTasksForDate(date);
-                        if (dateTasks.length === 0) return null;
-
-                        return (
-                          <div
-                            key={date}
-                            className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl rounded-2xl p-4 sm:p-6 border border-white/10 shadow-xl"
-                          >
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                                <Calendar className="w-5 h-5 text-white" />
-                              </div>
-                              <h3 className="text-white font-bold text-lg">
-                                {formatDate(date)}
-                              </h3>
-                            </div>
-                            <div className="space-y-3">
-                              {dateTasks.map((task) => {
-                                const key = `${date}-${task.id}`;
-                                const isCompleted = completions[key];
-
-                                return (
-                                  <div
-                                    key={task.id}
-                                    className={`group/task flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl transition-all ${
-                                      isCompleted
-                                        ? "bg-gradient-to-r from-emerald-500/30 to-teal-500/30 border-2 border-emerald-400/50 shadow-lg shadow-emerald-500/20"
-                                        : "bg-slate-700/30 hover:bg-slate-700/50 border border-white/10"
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-3 flex-1 w-full sm:w-auto">
-                                      <input
-                                        type="checkbox"
-                                        checked={isCompleted}
-                                        onChange={() =>
-                                          toggleTaskCompletion(task.id, date)
-                                        }
-                                        className="w-6 h-6 rounded border-2 border-white/30 bg-slate-800/50 checked:bg-emerald-500 cursor-pointer transition-all hover:scale-110"
-                                      />
-                                      <div className="flex-1">
-                                        <div
-                                          className={`font-semibold ${
-                                            isCompleted
-                                              ? "text-white"
-                                              : "text-white/90"
-                                          }`}
-                                        >
-                                          {task.name}
-                                        </div>
-                                        <div className="text-sm text-white/50 mt-1">
-                                          {task.type.charAt(0).toUpperCase() +
-                                            task.type.slice(1)}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                                      <div
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold shadow-lg ${
-                                          task.isNegative
-                                            ? "bg-gradient-to-r from-red-500 to-pink-500 shadow-red-500/50"
-                                            : "bg-gradient-to-r from-blue-500 to-cyan-500 shadow-blue-500/50"
-                                        }`}
-                                      >
-                                        <Zap className="w-4 h-4 text-white" />
-                                        <span className="text-white">
-                                          {task.isNegative ? "-" : "+"}
-                                          {Math.abs(task.xp)}
-                                        </span>
-                                      </div>
-                                      <button
-                                        onClick={() => deleteTask(task.id)}
-                                        className="text-red-400 hover:text-red-500 hover:bg-red-500/20 p-2 rounded-lg transition-all"
-                                      >
-                                        <X className="w-5 h-5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
                   </div>
                 )}
 
@@ -1040,4 +1295,4 @@ const QuestTracker = () => {
   );
 };
 
-export default QuestTracker;
+export default QuestTracker2;
