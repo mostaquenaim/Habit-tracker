@@ -254,7 +254,7 @@ const QuestTracker = () => {
         </div>
 
         <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-2xl p-6 mb-6">
-          <div className="flex gap-2 mb-6">
+          <div className="flex flex-col md:flex-row gap-2 mb-6">
             <button
               onClick={() => setActiveTab('tasks')}
               className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
